@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "main.py", line 168, in <module>
+    eval_nusc(cfg)
+  File "/3dmot_ws/MCTrack/evaluation/static_evaluation/nuscenes/eval.py", line 10, in eval_nusc
+    nusc_eval = TrackingEval(
+  File "/usr/local/lib/python3.8/site-packages/nuscenes/eval/tracking/evaluate.py", line 78, in __init__
+    nusc = NuScenes(version=nusc_version, verbose=verbose, dataroot=nusc_dataroot)
+  File "/usr/local/lib/python3.8/site-packages/nuscenes/nuscenes.py", line 62, in __init__
+    assert osp.exists(self.table_root), 'Database version not found: {}'.format(self.table_root)
+AssertionError: Database version not found: data/nuscenes/datasets/v1.0-trainval

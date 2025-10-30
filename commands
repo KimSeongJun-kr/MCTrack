@@ -1,0 +1,12 @@
+docker build -t mctrack:v0.1 .
+
+docker run -it --shm-size=16g \
+    -p 8081:8081 \
+    -v "/home/aimlab/seongjun_ws/docker_ws/3dmot_ws/MCTrack:/3dmot_ws/MCTrack" \
+    -v "/media/aimlab/HDD02_1TB/mctrack/data:/3dmot_ws/MCTrack/data" \
+    -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
+    --name mctrack0 \
+    mctrack:v0.1 /bin/bash
+
+python main.py --dataset nuscenes -e -p 1
+python main.py --dataset nuscenes -p 20 --debug
