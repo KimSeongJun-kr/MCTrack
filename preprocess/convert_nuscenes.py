@@ -485,21 +485,32 @@ def convert_baseversion_bboxes(bboxes, global2ego, cameras_transform_matrix):
     return new_bboxes
 
 
-def nuscenes_main(raw_data_path, dets_path, detector, save_path, split):
+def nuscenes_main(raw_data_path, dets_path, save_path, split):
     start_time = time.time()
-    dets_path = os.path.join(dets_path, detector, split + ".json")
+    # dets_path = os.path.join(dets_path, detector, split + ".json")
     dets_json = load_file(dets_path)
     if split == "test":
         scene_names = splits.create_splits_scenes()["test"]
         nusc = NuScenes(version="v1.0-test", dataroot=raw_data_path, verbose=True)
-    else:
+    elif split == "val":
         scene_names = splits.create_splits_scenes()["val"]
         nusc = NuScenes(
             version="v1.0-trainval", dataroot=raw_data_path, verbose=True
         )  # v1.0-trainval
+    elif split == "train":
+        scene_names = splits.create_splits_scenes()["train"]
+        nusc = NuScenes(
+            version="v1.0-trainval", dataroot=raw_data_path, verbose=True
+        )  # v1.0-trainval
+    elif split == "trainval":
+        scene_names = splits.create_splits_scenes()["train"] + splits.create_splits_scenes()["val"]
+        nusc = NuScenes(
+            version="v1.0-trainval", dataroot=raw_data_path, verbose=True
+        )  # v1.0-trainval
+    
     all_datas = {}
     for scene_index in tqdm(
-        range(len(nusc.scene)), desc="Convert nuScense dataset to base-version!"
+        range(len(nusc.scene)), desc="Converting to base-version! (non-target scenes would be skipped)"
     ):
         scene_info = nusc.scene[scene_index]
         scene_name = scene_info["name"]
@@ -571,7 +582,7 @@ def nuscenes_main(raw_data_path, dets_path, detector, save_path, split):
 
         all_datas[scene_name] = scene_datas
 
-    save_path = os.path.join(save_path, detector)
+    save_path = os.path.join(save_path)
     os.makedirs(save_path, exist_ok=True)
     save_path_temp = os.path.join(save_path, split + ".json")
     with open(save_path_temp, "w") as f:

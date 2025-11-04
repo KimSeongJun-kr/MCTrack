@@ -108,7 +108,7 @@ def save_results_nuscenes(tracking_results, result_path):
             for _, ind in confs[: min(500, len(confs))]
         ]
 
-    with open(result_path + "/results.json", "w") as f:
+    with open(result_path + "/tracking_results.json", "w") as f:
         json.dump(result, f)
 
 
@@ -209,7 +209,7 @@ def save_results_nuscenes_for_motion(tracking_results, result_path):
             for _, ind in confs[: min(500, len(confs))]
         ]
 
-    with open(result_path + "/results_for_motion.json", "w") as f:
+    with open(result_path + "/tracking_results_for_motion.json", "w") as f:
         json.dump(result, f)
 
 
