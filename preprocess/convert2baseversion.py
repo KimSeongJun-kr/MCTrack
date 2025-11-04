@@ -6,7 +6,7 @@ import argparse
 
 from convert_kitti import kitti_main
 from convert_nuscenes import nuscenes_main
-from convert_waymo import waymo_main
+# from convert_waymo import waymo_main
 
 kitti_cfg = {
     "raw_data_path": "data/kitti/datasets",
@@ -17,11 +17,11 @@ kitti_cfg = {
 }
 
 nuscenes_cfg = {
-    "raw_data_path": "s3://wangxiyang/open_datasets/nuscenes/raw_data/",
+    "raw_data_path": "data/nuscenes/datasets/",
     "dets_path": "data/nuscenes/detectors/",
     "save_path": "data/base_version/nuscenes/",
-    "detector": "largekernel",  #  centerpoint(val) / largekernel(test) / ....
-    "split": "test",  # val / test
+    "detector": "centerpoint",  #  centerpoint(val) / largekernel(test) / ....
+    "split": "val",  # val / test
 }
 
 waymo_cfg = {
@@ -56,11 +56,11 @@ if __name__ == "__main__":
             nuscenes_cfg["save_path"],
             nuscenes_cfg["split"],
         )
-    elif args.dataset == "waymo":
-        waymo_main(
-            waymo_cfg["raw_data_path"],
-            waymo_cfg["dets_path"],
-            waymo_cfg["detector"],
-            waymo_cfg["save_path"],
-            waymo_cfg["split"],
-        )
+    # elif args.dataset == "waymo":
+    #     waymo_main(
+    #         waymo_cfg["raw_data_path"],
+    #         waymo_cfg["dets_path"],
+    #         waymo_cfg["detector"],
+    #         waymo_cfg["save_path"],
+    #         waymo_cfg["split"],
+    #     )
