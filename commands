@@ -46,15 +46,22 @@ python /3dmot_ws/MCTrack/main.py -p 20 \
 datetime.now().strftime("%Y%m%d_%H%M%S")
 
 bash /3dmot_ws/MCTrack/perform_tracking.sh \
+  --run_name test_1 \
   --timestamp 20251104_170700 \
   --step 1 \
   --processors 20 \
   --split val \
-  --dets_path /3dmot_ws/MCTrack/data/nuscenes/detectors/centerpoint/val.json
+  --dets_file_path /3dmot_ws/MCTrack/data/nuscenes/detectors/centerpoint/val.json
 
 bash /3dmot_ws/MCTrack/perform_tracking.sh \
-  --timestamp 20251104_170700 \
+  --run_name test_1 \
+  --timestamp 20251104_194500 \
   --step 1 \
   --processors 20 \
   --split val \
-  --dets_path /3dmot_ws/MCTrack/data/nuscenes/detectors/test/detection_results.json
+  --dets_file_path /3dmot_ws/MCTrack/data/nuscenes/detectors/test/detection_results.json
+
+python /3dmot_ws/MCTrack/main.py -p 20 \
+  --dets_folder_path /3dmot_ws/MCTrack/data/base_version/nuscenes/interface_test/20251104_194500/step_1 \
+  --save_folder_path /3dmot_ws/MCTrack/prsys_results/interface_test/20251104_194500/step_1 \
+  --split val

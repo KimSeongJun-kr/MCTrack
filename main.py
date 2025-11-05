@@ -102,8 +102,8 @@ if __name__ == "__main__":
     parser.add_argument("--mode", "-m", action="store_true", help="online or offline")
     parser.add_argument("--process", "-p", type=int, default=1, help="multi-process!")
 
-    parser.add_argument("--dets_path", "-dp", type=str, default="data/base_version/nuscenes/", help="dets_path")
-    parser.add_argument("--save_path", "-sp", type=str, default="results/", help="save_path")
+    parser.add_argument("--dets_folder_path", "-dp", type=str, default="data/base_version/nuscenes/", help="dets_folder_path")
+    parser.add_argument("--save_folder_path", "-sp", type=str, default="results/", help="save_folder_path")
     parser.add_argument("--split", "-s", type=str, default="val", help="split")
     
     args = parser.parse_args()
@@ -119,10 +119,7 @@ if __name__ == "__main__":
 
     cfg = yaml.load(open(cfg_path, "r"), Loader=yaml.Loader)
 
-    save_path = args.save_path
-    save_path = os.path.join(
-        os.path.dirname(cfg["SAVE_PATH"])
-    )
+    save_path = args.save_folder_path
     os.makedirs(save_path, exist_ok=True)
     cfg["SAVE_PATH"] = save_path
     cfg["SPLIT"] = args.split
@@ -130,7 +127,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     detections_root = os.path.join(
-        args.dets_path, cfg["SPLIT"] + ".json"
+        args.dets_folder_path, cfg["SPLIT"] + ".json"
     )
     with open(detections_root, "r", encoding="utf-8") as file:
         print(f"Loading data from {detections_root}...")
