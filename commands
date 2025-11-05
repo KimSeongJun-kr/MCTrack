@@ -33,6 +33,14 @@ python seongjun_tools/evaluate_trackwise.py \
     --output_path results/nuscenes/20251031_081143/trackwise_evaluation.json \
     --verbose 1
 
+python seongjun_tools/evaluate_trackwise.py \
+    prsys_results/interface_test/20251104_194500/step_1/tracking_results_for_motion.json \
+    --nusc_dataroot data/nuscenes/datasets \
+    --eval_set val \
+    --nusc_version v1.0-trainval \
+    --output_path prsys_results/interface_test/20251104_194500/step_1/trackwise_evaluation.json \
+    --verbose 1
+
 python /3dmot_ws/MCTrack/preprocess/convert2baseversion.py \
   --dets_path data/nuscenes/detectors/centerpoint/val.json \
   --save_path data/base_version/nuscenes/{YYYYMMDD_hhmmss}/step_{N} \
