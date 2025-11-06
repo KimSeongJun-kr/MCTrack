@@ -5,6 +5,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Any
 from collections import defaultdict
 from tqdm import tqdm
+import multiprocessing as mp
 
 from nuscenes import NuScenes
 from nuscenes.eval.common.loaders import load_gt, add_center_dist, filter_eval_boxes
@@ -14,6 +15,172 @@ from nuscenes.eval.tracking.loaders import create_tracks
 from nuscenes.eval.common.data_classes import EvalBoxes
 from nuscenes.eval.tracking.algo import TrackingEvaluation
 from nuscenes.eval.tracking.constants import AVG_METRIC_MAP, MOT_METRIC_MAP
+
+
+_GLOBAL_tracks_gt = None
+_GLOBAL_tracks_pred_variants = None
+_GLOBAL_cfg = None
+
+# Class-level parallel globals (used inside variant worker)
+_CLS_tracks_gt = None
+_CLS_tracks_pred = None
+_CLS_cfg = None
+
+
+def _compute_overall_metrics_for_variant_mp(variant_name: str,
+                                            tracks_gt,
+                                            tracks_pred,
+                                            cfg,
+                                            disable_class_tqdm: bool = True):
+    metrics = TrackingMetrics(cfg)
+    metric_data_list = TrackingMetricDataList()
+
+    class_names = cfg.class_names if hasattr(cfg, 'class_names') else cfg.tracking_names
+
+    if disable_class_tqdm:
+        # 병렬: 클래스 단위 포크 풀 (워커에서는 진행률 숨김)
+        global _CLS_tracks_gt, _CLS_tracks_pred, _CLS_cfg
+        _CLS_tracks_gt = tracks_gt
+        _CLS_tracks_pred = tracks_pred
+        _CLS_cfg = cfg
+        with mp.get_context('fork').Pool(processes=min(len(class_names), os.cpu_count() or 1)) as pool:
+            for cname, md in pool.imap_unordered(_compute_class_md_entry, class_names):
+                metric_data_list.set(cname, md)
+    else:
+        # 직렬: 진행률 표시
+        for class_name in tqdm(class_names, disable=False, desc=f"{variant_name} classes"):
+            curr_ev = TrackingEvaluation(tracks_gt, tracks_pred, class_name, cfg.dist_fcn_callable,
+                                         cfg.dist_th_tp, cfg.min_recall,
+                                         num_thresholds=TrackingMetricData.nelem,
+                                         metric_worst=cfg.metric_worst,
+                                         verbose=False,
+                                         output_dir=None,
+                                         render_classes=None)
+            curr_md = curr_ev.accumulate()
+            metric_data_list.set(class_name, curr_md)
+
+    for class_name in class_names:
+        md = metric_data_list[class_name]
+        if np.all(np.isnan(md.mota)):
+            best_thresh_idx = None
+        else:
+            best_thresh_idx = np.nanargmax(md.mota)
+
+        if best_thresh_idx is not None:
+            for metric_name in MOT_METRIC_MAP.values():
+                if metric_name == '':
+                    continue
+                value = md.get_metric(metric_name)[best_thresh_idx]
+                metrics.add_label_metric(metric_name, class_name, value)
+
+        for metric_name in AVG_METRIC_MAP.keys():
+            values = np.array(md.get_metric(AVG_METRIC_MAP[metric_name]))
+            assert len(values) == TrackingMetricData.nelem
+            if np.all(np.isnan(values)):
+                value = np.nan
+            else:
+                np.all(values[np.logical_not(np.isnan(values))] >= 0)
+                values[np.isnan(values)] = cfg.metric_worst[metric_name]
+                value = float(np.nanmean(values))
+            metrics.add_label_metric(metric_name, class_name, value)
+
+    return variant_name, metrics.serialize()
+
+
+def _compute_class_md_entry(class_name: str):
+    """Compute TrackingMetricData for one class (used in class-level Pool)."""
+    tracks_gt = _CLS_tracks_gt
+    tracks_pred = _CLS_tracks_pred
+    cfg = _CLS_cfg
+    curr_ev = TrackingEvaluation(tracks_gt, tracks_pred, class_name, cfg.dist_fcn_callable,
+                                 cfg.dist_th_tp, cfg.min_recall,
+                                 num_thresholds=TrackingMetricData.nelem,
+                                 metric_worst=cfg.metric_worst,
+                                 verbose=False,
+                                 output_dir=None,
+                                 render_classes=None)
+    curr_md = curr_ev.accumulate()
+    return class_name, curr_md
+
+
+def _compute_overall_metrics_for_variant_entry(args):
+    """Multiprocessing entry point for overall variant metrics (avoids lambda)."""
+    return _compute_overall_metrics_for_variant_mp(*args[:-1], disable_class_tqdm=args[-1])
+
+
+def _compute_overall_metrics_for_variant_by_name(variant_name: str):
+    """Fork-safe worker that only receives a picklable name and reads globals."""
+    tracks_gt = _GLOBAL_tracks_gt
+    tracks_pred = _GLOBAL_tracks_pred_variants[variant_name]
+    cfg = _GLOBAL_cfg
+    _, metrics_summary = _compute_overall_metrics_for_variant_mp(
+        variant_name, tracks_gt, tracks_pred, cfg, disable_class_tqdm=True)
+    return variant_name, metrics_summary
+
+
+def _evaluate_scene_mp(args):
+    """Multiprocessing entry point: evaluate a single scene across variants."""
+    scene_id, scene_tracks_gt, scene_tracks_pred, cfg_local = args
+    scene_result = {}
+    # GT track ID 수집
+    gt_track_ids = set()
+    for frame_boxes in scene_tracks_gt.values():
+        for box in frame_boxes:
+            gt_track_ids.add((box.tracking_id, box.tracking_name))
+    # 각 GT track에 대해 평가
+    for track_id, class_name in gt_track_ids:
+        track_key = f"{scene_id}_{track_id}_{class_name}"
+        # GT track 수집
+        track_gt = []
+        for frame_boxes in scene_tracks_gt.values():
+            for box in frame_boxes:
+                if box.tracking_id == track_id and box.tracking_name == class_name:
+                    track_gt.append(box)
+        if len(track_gt) == 0:
+            continue
+        track_metrics = {
+            'scene_id': scene_id,
+            'track_id': track_id,
+            'class_name': class_name,
+            'track_length_gt': len(track_gt),
+            'variants': {}
+        }
+        for variant_name in ['det', 'kalman_cv', 'diff', 'curve']:
+            if variant_name not in scene_tracks_pred:
+                continue
+            # Prediction track 찾기
+            track_pred = []
+            pred_track_ids = set()
+            for timestamp in scene_tracks_pred[variant_name].keys():
+                for box in scene_tracks_pred[variant_name][timestamp]:
+                    if box.tracking_name == class_name:
+                        pred_track_ids.add(box.tracking_id)
+            best_match_id = None
+            best_overlap = 0
+            for pred_track_id in pred_track_ids:
+                pred_track = []
+                for timestamp in scene_tracks_pred[variant_name].keys():
+                    for box in scene_tracks_pred[variant_name][timestamp]:
+                        if box.tracking_id == pred_track_id and box.tracking_name == class_name:
+                            pred_track.append(box)
+                gt_samples = {box.sample_token for box in track_gt}
+                pred_samples = {box.sample_token for box in pred_track}
+                overlap = len(gt_samples & pred_samples)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_match_id = pred_track_id
+            if best_match_id is not None:
+                for timestamp in scene_tracks_pred[variant_name].keys():
+                    for box in scene_tracks_pred[variant_name][timestamp]:
+                        if box.tracking_id == best_match_id and box.tracking_name == class_name:
+                            track_pred.append(box)
+            dist_th_tp = cfg_local.dist_th_tp if hasattr(cfg_local, 'dist_th_tp') else 2.0
+            variant_metrics = compute_track_metrics(
+                track_gt, track_pred, variant_name, dist_th_tp=dist_th_tp
+            )
+            track_metrics['variants'][variant_name] = variant_metrics
+        scene_result[track_key] = track_metrics
+    return scene_id, scene_result
 
 
 def quaternion_to_yaw(q):
@@ -92,7 +259,7 @@ def load_prediction_variants(result_path: str, max_boxes_per_sample: int, box_cl
         ('rotation_det', 'velocity_curve', 'curve'),
     ]
     
-    for rot_field, vel_field, variant_name in variant_configs:
+    for rot_field, vel_field, variant_name in tqdm(variant_configs, disable=False, desc="Deserialize variants"):
         data_variant = copy.deepcopy(data)
         process_data(data_variant, rot_field, vel_field)
         all_results = EvalBoxes.deserialize(data_variant['results'], box_cls)
@@ -252,14 +419,14 @@ def evaluate_trackwise(
     
     # Center distance 추가
     gt_boxes = add_center_dist(nusc, gt_boxes)
-    for variant_name in pred_variants:
+    for variant_name in tqdm(list(pred_variants.keys()), disable=False, desc="Add center dist (pred)"):
         pred_variants[variant_name] = add_center_dist(nusc, pred_variants[variant_name])
     
     # 필터링
     if verbose:
         print("박스 필터링 중...")
     gt_boxes = filter_eval_boxes(nusc, gt_boxes, cfg.class_range, verbose=False)
-    for variant_name in pred_variants:
+    for variant_name in tqdm(list(pred_variants.keys()), disable=False, desc="Filter boxes (pred)"):
         pred_variants[variant_name] = filter_eval_boxes(
             nusc, pred_variants[variant_name], cfg.class_range, verbose=False
         )
@@ -269,7 +436,7 @@ def evaluate_trackwise(
         print("트랙 생성 중...")
     tracks_gt = create_tracks(gt_boxes, nusc, eval_set, gt=True)
     tracks_pred_variants = {}
-    for variant_name in pred_variants:
+    for variant_name in tqdm(list(pred_variants.keys()), disable=False, desc="Create tracks (pred)"):
         tracks_pred_variants[variant_name] = create_tracks(
             pred_variants[variant_name], nusc, eval_set, gt=False
         )
@@ -277,50 +444,9 @@ def evaluate_trackwise(
     # nuScenes 스타일의 전체/클래스별 메트릭 계산 (variant별)
     def compute_overall_metrics_for_variant(variant_name: str):
         tracks_pred = tracks_pred_variants[variant_name]
-
-        metrics = TrackingMetrics(cfg)
-        metric_data_list = TrackingMetricDataList()
-
-        # 각 클래스에 대해 accumulate
-        class_names = cfg.class_names if hasattr(cfg, 'class_names') else cfg.tracking_names
-        for class_name in tqdm(class_names, disable=False, desc=f"{variant_name} classes"):
-            curr_ev = TrackingEvaluation(tracks_gt, tracks_pred, class_name, cfg.dist_fcn_callable,
-                                         cfg.dist_th_tp, cfg.min_recall,
-                                         num_thresholds=TrackingMetricData.nelem,
-                                         metric_worst=cfg.metric_worst,
-                                         verbose=False,
-                                         output_dir=None,
-                                         render_classes=None)
-            curr_md = curr_ev.accumulate()
-            metric_data_list.set(class_name, curr_md)
-
-        # 메트릭 집계 (evaluate.py 로직과 동일)
-        for class_name in class_names:
-            md = metric_data_list[class_name]
-            if np.all(np.isnan(md.mota)):
-                best_thresh_idx = None
-            else:
-                best_thresh_idx = np.nanargmax(md.mota)
-
-            if best_thresh_idx is not None:
-                for metric_name in MOT_METRIC_MAP.values():
-                    if metric_name == '':
-                        continue
-                    value = md.get_metric(metric_name)[best_thresh_idx]
-                    metrics.add_label_metric(metric_name, class_name, value)
-
-            for metric_name in AVG_METRIC_MAP.keys():
-                values = np.array(md.get_metric(AVG_METRIC_MAP[metric_name]))
-                assert len(values) == TrackingMetricData.nelem
-                if np.all(np.isnan(values)):
-                    value = np.nan
-                else:
-                    np.all(values[np.logical_not(np.isnan(values))] >= 0)
-                    values[np.isnan(values)] = cfg.metric_worst[metric_name]
-                    value = float(np.nanmean(values))
-                metrics.add_label_metric(metric_name, class_name, value)
-
-        metrics_summary = metrics.serialize()
+        # 직렬 실행 시에는 클래스 진행률 바를 표시
+        _, metrics_summary = _compute_overall_metrics_for_variant_mp(
+            variant_name, tracks_gt, tracks_pred, cfg, disable_class_tqdm=False)
         return metrics_summary
 
     # Track별 평가
@@ -328,99 +454,54 @@ def evaluate_trackwise(
         print("각 트랙별 평가 수행 중...")
     
     trackwise_results = {}
+
     
-    # 각 scene과 track ID에 대해 평가
-    for scene_id in tqdm(tracks_gt.keys(), disable=False, desc="Scenes"):
+
+    scene_ids = list(tracks_gt.keys())
+    # 병렬 처리: 씬 단위로 분할
+    os.environ.setdefault('OMP_NUM_THREADS', '1')
+    os.environ.setdefault('MKL_NUM_THREADS', '1')
+    os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+    os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
+
+    tasks = []
+    for scene_id in scene_ids:
         scene_tracks_gt = tracks_gt[scene_id]
-        scene_tracks_pred = {variant: tracks_pred_variants[variant][scene_id] 
-                           for variant in tracks_pred_variants.keys()}
-        
-        # GT track ID 수집
-        gt_track_ids = set()
-        for frame_boxes in scene_tracks_gt.values():
-            for box in frame_boxes:
-                gt_track_ids.add((box.tracking_id, box.tracking_name))
-        
-        # 각 GT track에 대해 평가
-        for track_id, class_name in gt_track_ids:
-            track_key = f"{scene_id}_{track_id}_{class_name}"
-            
-            # GT track 수집
-            track_gt = []
-            for frame_boxes in scene_tracks_gt.values():
-                for box in frame_boxes:
-                    if box.tracking_id == track_id and box.tracking_name == class_name:
-                        track_gt.append(box)
-            
-            if len(track_gt) == 0:
-                continue
-            
-            # 각 variant에 대해 prediction track 찾기 및 평가
-            track_metrics = {
-                'scene_id': scene_id,
-                'track_id': track_id,
-                'class_name': class_name,
-                'track_length_gt': len(track_gt),
-                'variants': {}
-            }
-            
-            for variant_name in ['det', 'kalman_cv', 'diff', 'curve']:
-                if variant_name not in scene_tracks_pred:
-                    continue
-                
-                # Prediction track 찾기
-                track_pred = []
-                pred_track_ids = set()
-                
-                # 먼저 매칭되는 prediction track 찾기
-                for timestamp in scene_tracks_pred[variant_name].keys():
-                    for box in scene_tracks_pred[variant_name][timestamp]:
-                        if box.tracking_name == class_name:
-                            pred_track_ids.add(box.tracking_id)
-                
-                # 각 prediction track과 GT track의 겹침 확인
-                best_match_id = None
-                best_overlap = 0
-                
-                for pred_track_id in pred_track_ids:
-                    pred_track = []
-                    for timestamp in scene_tracks_pred[variant_name].keys():
-                        for box in scene_tracks_pred[variant_name][timestamp]:
-                            if box.tracking_id == pred_track_id and box.tracking_name == class_name:
-                                pred_track.append(box)
-                    
-                    # 겹침 계산 (같은 sample_token 개수)
-                    gt_samples = {box.sample_token for box in track_gt}
-                    pred_samples = {box.sample_token for box in pred_track}
-                    overlap = len(gt_samples & pred_samples)
-                    
-                    if overlap > best_overlap:
-                        best_overlap = overlap
-                        best_match_id = pred_track_id
-                
-                # 최적 매칭 track 사용
-                if best_match_id is not None:
-                    for timestamp in scene_tracks_pred[variant_name].keys():
-                        for box in scene_tracks_pred[variant_name][timestamp]:
-                            if box.tracking_id == best_match_id and box.tracking_name == class_name:
-                                track_pred.append(box)
-                
-                # 메트릭 계산 (distance threshold 사용)
-                dist_th_tp = cfg.dist_th_tp if hasattr(cfg, 'dist_th_tp') else 2.0
-                variant_metrics = compute_track_metrics(
-                    track_gt, track_pred, variant_name, dist_th_tp=dist_th_tp
-                )
-                track_metrics['variants'][variant_name] = variant_metrics
-            
-            trackwise_results[track_key] = track_metrics
+        scene_tracks_pred = {variant: tracks_pred_variants[variant][scene_id]
+                             for variant in tracks_pred_variants.keys()}
+        tasks.append((scene_id, scene_tracks_gt, scene_tracks_pred, cfg))
+
+    with mp.get_context('fork').Pool(processes=min(len(scene_ids), os.cpu_count() or 1)) as pool:
+        for sid, sres in tqdm(pool.imap_unordered(_evaluate_scene_mp, tasks), total=len(tasks), disable=False, desc="Scenes"):
+            trackwise_results.update(sres)
     
     # variant별 전체 메트릭 계산
     if verbose:
         print("nuScenes 메트릭(전체/클래스별) 계산 중...")
     overall_metrics = {}
     variant_order = [v for v in ['det', 'kalman_cv', 'diff', 'curve'] if v in tracks_pred_variants]
-    for variant_name in tqdm(variant_order, disable=False, desc="Overall metrics"):
-        overall_metrics[variant_name] = compute_overall_metrics_for_variant(variant_name)
+    # 프로세스 병렬화: 변이 단위를 병렬 실행 (이름만 전달하여 피클 이슈 회피)
+    if len(variant_order) > 1:
+        # 중첩 병렬화 방지: BLAS/OMP 스레드 수를 1로 제한(이미 설정되어 있지 않으면)
+        os.environ.setdefault('OMP_NUM_THREADS', '1')
+        os.environ.setdefault('MKL_NUM_THREADS', '1')
+        os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+        os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
+
+        # 전역 참조 설정(포크에서는 복사됨)
+        global _GLOBAL_tracks_gt, _GLOBAL_tracks_pred_variants, _GLOBAL_cfg
+        _GLOBAL_tracks_gt = tracks_gt
+        _GLOBAL_tracks_pred_variants = tracks_pred_variants
+        _GLOBAL_cfg = cfg
+
+        with mp.get_context('fork').Pool(processes=min(len(variant_order), os.cpu_count() or 1)) as pool:
+            for variant_name, metrics_summary in tqdm(
+                    pool.imap_unordered(_compute_overall_metrics_for_variant_by_name, variant_order),
+                    total=len(variant_order), disable=False, desc="Overall metrics"):
+                overall_metrics[variant_name] = metrics_summary
+    else:
+        for variant_name in tqdm(variant_order, disable=False, desc="Overall metrics"):
+            overall_metrics[variant_name] = compute_overall_metrics_for_variant(variant_name)
 
     # 결과 저장
     if verbose:
