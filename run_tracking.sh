@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # Keep terminal window open when script finishes (success or error)
+# Only pause if running in an interactive terminal (not via docker exec)
+# Note: When run via docker exec without -t flag, stdout is not a terminal, so pause won't happen
 pause_if_terminal() {
   if [[ -t 1 ]]; then
     exec "${SHELL:-/bin/bash}" -l
@@ -19,7 +21,7 @@ trap 'on_error' ERR
 trap 'pause_if_terminal' EXIT
 
 # Defaults
-BASE_DIR="/3dmot_ws/MCTrack"
+BASE_FOLDER_PATH="/3dmot_ws/MCTrack"
 PROCESSORS=""
 SPLIT=""
 STEP=""
@@ -102,19 +104,19 @@ if [[ ! -f "$DETS_FILE_PATH" ]]; then
   exit 1
 fi
 
-SAVE_FOLDER_PATH="${BASE_DIR}/data/base_version/nuscenes/${RUN_NAME}/${TIMESTAMP}/step_${STEP}"
-RESULT_FOLDER_PATH="${BASE_DIR}/prsys_results/${RUN_NAME}/${TIMESTAMP}/step_${STEP}"
+SAVE_FOLDER_PATH="${BASE_FOLDER_PATH}/data/base_version/nuscenes/${RUN_NAME}/${TIMESTAMP}/step_${STEP}"
+RESULT_FOLDER_PATH="${BASE_FOLDER_PATH}/prsys_results/${RUN_NAME}/${TIMESTAMP}/step_${STEP}"
 
 echo "[1/2] Converting detections to base version"
-echo "python ${BASE_DIR}/preprocess/convert2baseversion.py --dets_file_path $DETS_FILE_PATH --save_folder_path $SAVE_FOLDER_PATH --split $SPLIT"
-python "${BASE_DIR}/preprocess/convert2baseversion.py" \
+echo "python ${BASE_FOLDER_PATH}/preprocess/convert2baseversion.py --dets_file_path $DETS_FILE_PATH --save_folder_path $SAVE_FOLDER_PATH --split $SPLIT"
+python "${BASE_FOLDER_PATH}/preprocess/convert2baseversion.py" \
   --dets_file_path "$DETS_FILE_PATH" \
   --save_folder_path "$SAVE_FOLDER_PATH" \
   --split "$SPLIT"
 
 echo "[2/2] Running main tracking pipeline"
-echo "python ${BASE_DIR}/main.py -p $PROCESSORS --dets_folder_path $SAVE_FOLDER_PATH --save_folder_path $RESULT_FOLDER_PATH --split $SPLIT"
-python "${BASE_DIR}/main.py" -p "$PROCESSORS" \
+echo "python ${BASE_FOLDER_PATH}/main.py -p $PROCESSORS --dets_folder_path $SAVE_FOLDER_PATH --save_folder_path $RESULT_FOLDER_PATH --split $SPLIT"
+python "${BASE_FOLDER_PATH}/main.py" -p "$PROCESSORS" \
   --dets_folder_path "$SAVE_FOLDER_PATH" \
   --save_folder_path "$RESULT_FOLDER_PATH" \
   --split "$SPLIT"

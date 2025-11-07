@@ -92,6 +92,14 @@ python seongjun_tools/evaluate_trackwise.py \
     --output_path prsys_results/interface_test/20251104_194500/step_1/trackwise_evaluation.json \
     --verbose 1
 
+python seongjun_tools/evaluate_trackwise_parallel.py \
+    prsys_results/interface_test/20251104_194500/step_1/tracking_results_for_motion.json \
+    --nusc_dataroot data/nuscenes/datasets \
+    --eval_set val \
+    --nusc_version v1.0-trainval \
+    --output_path prsys_results/eval_code_test/trackwise_evaluation.json \
+    --verbose 1
+
 python /3dmot_ws/MCTrack/seongjun_tools/visualize_evalute_results.py \
   /3dmot_ws/MCTrack/results/nuscenes/20251031_081143/trackwise_evaluation.json \
   --variant det
