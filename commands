@@ -93,13 +93,35 @@ python seongjun_tools/evaluate_trackwise.py \
     --verbose 1
 
 python seongjun_tools/evaluate_trackwise_parallel.py \
-    prsys_results/interface_test/20251104_194500/step_1/tracking_results_for_motion.json \
-    --nusc_dataroot data/nuscenes/datasets \
-    --eval_set val \
-    --nusc_version v1.0-trainval \
+    --result_path prsys_results/interface_test/20251104_194500/step_1/tracking_results_for_motion.json \
     --output_path prsys_results/eval_code_test/trackwise_evaluation.json \
-    --verbose 1
+
+python seongjun_tools/evaluate_trackwise_parallel.py \
+    --result_path prsys_results/interface_test/20251104_194500/step_1/tracking_results_for_motion.json \
+    --output_path prsys_results/eval_code_test_2/trackwise_evaluation.json \
+    --max_scenes 5
+
+python seongjun_tools/evaluate_trackwise_parallel.py \
+    --result_path prsys_results/interface_test/20251104_194500/step_1/tracking_results_for_motion.json \
+    --output_path prsys_results/eval_code_test_3/trackwise_evaluation.json
+
+pip install seaborn matplotlib pandas
 
 python /3dmot_ws/MCTrack/seongjun_tools/visualize_evalute_results.py \
-  /3dmot_ws/MCTrack/results/nuscenes/20251031_081143/trackwise_evaluation.json \
-  --variant det
+  /3dmot_ws/MCTrack/prsys_results/interface_test/20251104_194500/step_1/trackwise_evaluation.json \
+  --variant kalman_cv
+
+python seongjun_tools/check_tracking_result.py \
+  prsys_results/interface_test/20251104_194500/step_1/tracking_results_for_motion.json
+
+python /3dmot_ws/MCTrack/seongjun_tools/visualize_evalute_results.py \
+  /3dmot_ws/MCTrack/prsys_results/eval_code_test_3/trackwise_evaluation.json \
+  --variant kalman_cv
+
+bash /3dmot_ws/MCTrack/run_tracking.sh \
+  --run_name bevfusion_init \
+  --timestamp 20251107_163200 \
+  --step 0 \
+  --processors 20 \
+  --split val \
+  --dets_file_path "/3dmot_ws/MCTrack/data/nuscenes/detectors/detection_results(bev_fusion)"

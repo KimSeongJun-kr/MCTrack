@@ -46,16 +46,16 @@ if __name__ == "__main__":
         help="NuScenes raw data path",
     )
     parser.add_argument(
-        "--dets_path",
+        "--dets_file_path",
         type=str,
         required=True,
-        help="NuScenes detectors path",
+        help="NuScenes detection file path",
     )
     parser.add_argument(
-        "--save_path",
+        "--save_folder_path",
         type=str,
         required=True,
-        help="NuScenes converted base version save path",
+        help="NuScenes converted base version save folder path",
     )
     parser.add_argument(
         "--split",
@@ -77,8 +77,8 @@ if __name__ == "__main__":
     # elif args.dataset == "nuscenes":
     nuscenes_main(
         args.raw_data_path,
-        args.dets_path,
-        args.save_path,
+        args.dets_file_path,
+        args.save_folder_path,
         args.split,
     )
     # elif args.dataset == "waymo":
