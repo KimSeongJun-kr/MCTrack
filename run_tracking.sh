@@ -95,8 +95,8 @@ if [[ ! "$PROCESSORS" =~ ^[0-9]+$ ]]; then
 fi
 
 case "$SPLIT" in
-  val|test|train) ;;
-  *) echo "Error: --split must be one of {val|test|train}"; exit 1;;
+  val|test|train|mini_train|mini_val|mini) ;;
+  *) echo "Error: --split must be one of {val|test|train|mini_train|mini_val|mini}"; exit 1;;
 esac
 
 if [[ ! -f "$DETS_FILE_PATH" ]]; then

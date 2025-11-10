@@ -124,4 +124,13 @@ bash /3dmot_ws/MCTrack/run_tracking.sh \
   --step 0 \
   --processors 20 \
   --split val \
-  --dets_file_path "/3dmot_ws/MCTrack/data/nuscenes/detectors/detection_results(bev_fusion)"
+  --dets_file_path "/3dmot_ws/MCTrack/data/nuscenes/detectors/detection_results(bevfusion).json"
+
+
+bash /3dmot_ws/MCTrack/run_tracking.sh \
+  --run_name bevfusion_mini_train \
+  --timestamp 20251110_141300 \
+  --step 0 \
+  --processors 20 \
+  --split mini_train \
+  --dets_file_path "/3dmot_ws/MCTrack/data/nuscenes/detectors/detection_results(bevfusion)(mini_train).json"

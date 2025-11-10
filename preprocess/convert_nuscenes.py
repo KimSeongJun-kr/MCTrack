@@ -507,6 +507,21 @@ def nuscenes_main(raw_data_path, dets_path, save_path, split):
         nusc = NuScenes(
             version="v1.0-trainval", dataroot=raw_data_path, verbose=True
         )  # v1.0-trainval
+    elif split == "mini_train":
+        scene_names = splits.create_splits_scenes()["mini_train"]
+        nusc = NuScenes(
+            version="v1.0-mini", dataroot=raw_data_path, verbose=True
+        )  # v1.0-mini
+    elif split == "mini_val":
+        scene_names = splits.create_splits_scenes()["mini_val"]
+        nusc = NuScenes(
+            version="v1.0-mini", dataroot=raw_data_path, verbose=True
+        )  # v1.0-mini
+    elif split == "mini":
+        scene_names = splits.create_splits_scenes()["mini_val"] + splits.create_splits_scenes()["mini_train"]
+        nusc = NuScenes(
+            version="v1.0-mini", dataroot=raw_data_path, verbose=True
+        )  # v1.0-mini
     
     all_datas = {}
     for scene_index in tqdm(

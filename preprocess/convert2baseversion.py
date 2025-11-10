@@ -61,8 +61,8 @@ if __name__ == "__main__":
         "--split",
         type=str,
         required=True,
-        choices=["val", "test","train"],
-        help="NuScenes split (val/test/train)",
+        choices=["val", "test","train","mini_train","mini_val","mini"],
+        help="NuScenes split (val/test/train/mini_train/mini_val/mini)",
     )
     args = parser.parse_args()
 
