@@ -134,3 +134,51 @@ bash /3dmot_ws/MCTrack/run_tracking.sh \
   --processors 20 \
   --split mini_train \
   --dets_file_path "/3dmot_ws/MCTrack/data/nuscenes/detectors/detection_results(bevfusion)(mini_train).json"
+
+
+docker run -it --shm-size=16g \
+    -p 8082:8082 \
+    -v "/media/aimlab/HDD1/users/seongjun/prsystem/MCTrack:/3dmot_ws/MCTrack" \
+    -v "/data/user_data/seongjun/mctrack/data:/3dmot_ws/MCTrack/data" \
+    -v "/data/dataset/yuri_nuscenes:/3dmot_ws/MCTrack/data/nuscenes/datasets" \
+    -v "/data/user_data/seongjun/prsystem/prsys_results:/3dmot_ws/MCTrack/prsys_results" \
+    --name mctrack1 \
+    mctrack:v0.1 /bin/bash
+
+
+python seongjun_tools/visualize_boxes_det_trk.py \
+  --detection_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_5/detection_results.json \
+  --tracking_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_5/tracking_results_for_motion.json \
+  --output_dir /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_5/visualize_images_rot_det \
+  --scene_name scene-0003
+
+python seongjun_tools/visualize_boxes_det_trk.py \
+  --detection_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/detection_results.json \
+  --tracking_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/tracking_results_for_motion.json \
+  --output_dir /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/visualize_images_rot_det \
+  --scene_name scene-0003
+
+python seongjun_tools/visualize_boxes_det_trk.py \
+  --detection_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_4/detection_results.json \
+  --tracking_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_4/tracking_results_for_motion.json \
+  --output_dir /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_4/visualize_images \
+  --scene_name scene-0003
+
+python seongjun_tools/visualize_boxes_det_trk.py \
+  --detection_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/detection_results.json \
+  --tracking_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/tracking_results_for_motion.json \
+  --output_dir /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/visualize_images_rot_det \
+  --scene_name scene-0003
+
+python seongjun_tools/visualize_boxes_det_det.py \
+  --detection_json1 /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/detection_results.json \
+  --detection_json2 /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_5/detection_results.json \
+  --output_dir /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/visualize_images_det1_det2 \
+  --scene_name scene-0003
+
+
+python seongjun_tools/visualize_boxes_det_trk.py \
+  --detection_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/detection_results.json \
+  --tracking_json /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/tracking_results_for_motion.json \
+  --output_dir /3dmot_ws/MCTrack/prsys_results/val_1/20251117_145748/step_0/visualize_images_rot_det \
+  --scene_name scene-0013
