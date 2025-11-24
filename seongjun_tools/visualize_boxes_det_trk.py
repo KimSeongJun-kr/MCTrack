@@ -156,8 +156,8 @@ def create_box_geometry(
     size = record.get("size")
     rotation = record.get("rotation")
     if rotation is None:
-        rotation = record.get("rotation_det")
-        # rotation = record.get("rotation_kalman_cv")
+        # rotation = record.get("rotation_det")
+        rotation = record.get("rotation_kalman_cv")
     if translation is None or size is None or rotation is None:
         return None
     center = np.array(translation, dtype=np.float64) - anchor_center
@@ -171,6 +171,46 @@ def create_box_geometry(
     obb = o3d.geometry.OrientedBoundingBox(center=center, R=rot_matrix, extent=extents)
     obb.color = color
     return obb
+
+
+def create_front_sphere(
+    box: o3d.geometry.OrientedBoundingBox,
+    color: Tuple[float, float, float],
+    sphere_radius_ratio: float = 0.15,
+) -> o3d.geometry.TriangleMesh:
+    """
+    박스의 앞 방향에 구체를 생성합니다.
+    
+    Args:
+        box: OrientedBoundingBox 객체
+        color: 구체의 색상 (RGB, 0-1 범위)
+        sphere_radius_ratio: 구체 반지름을 박스의 최소 크기에 대한 비율 (기본값: 0.15)
+    
+    Returns:
+        구체 메시 객체
+    """
+    center = np.asarray(box.center, dtype=np.float64)
+    rot_matrix = np.asarray(box.R, dtype=np.float64)
+    extents = np.asarray(box.extent, dtype=np.float64)
+    
+    # extents는 [length, width, height] 순서
+    # 회전 행렬의 첫 번째 열이 length 방향 (앞뒤 방향)
+    forward_direction = rot_matrix[:, 0]
+    length = extents[0]
+    
+    # 박스 중심에서 앞 방향으로 length/2 만큼 이동한 위치
+    front_position = center + forward_direction * (length / 2.0)
+    
+    # 구체 반지름: 박스의 최소 크기의 일정 비율
+    min_extent = float(np.min(extents))
+    sphere_radius = min_extent * sphere_radius_ratio
+    
+    # 구체 생성
+    sphere = o3d.geometry.TriangleMesh.create_sphere(radius=sphere_radius, resolution=10)
+    sphere.translate(front_position)
+    sphere.paint_uniform_color(color)
+    
+    return sphere
 
 
 def determine_anchor_pose(
@@ -378,6 +418,9 @@ def build_sample_geometries(
         box = create_box_geometry(record, DETECTION_COLOR, anchor_center, anchor_rotation, size_order, quat_order)
         if box is not None:
             geometries.append(box)
+            # 앞 방향에 구체 추가
+            sphere = create_front_sphere(box, DETECTION_COLOR)
+            geometries.append(sphere)
         else:
             raise ValueError(f"Box not found for record: {record}")
     for record in trackings:
@@ -387,12 +430,18 @@ def build_sample_geometries(
         box = create_box_geometry(record, TRACKING_COLOR, anchor_center, anchor_rotation, size_order, quat_order)
         if box is not None:
             geometries.append(box)
+            # 앞 방향에 구체 추가
+            sphere = create_front_sphere(box, TRACKING_COLOR)
+            geometries.append(sphere)
         else:
             raise ValueError(f"Box not found for record: {record}")
     for record in ground_truths:
         box = create_box_geometry(record, GT_COLOR, anchor_center, anchor_rotation, "wlh", "wxyz")
         if box is not None:
             geometries.append(box)
+            # 앞 방향에 구체 추가
+            sphere = create_front_sphere(box, GT_COLOR)
+            geometries.append(sphere)
         else:
             raise ValueError(f"Box not found for record: {record}")
     if add_axes:
