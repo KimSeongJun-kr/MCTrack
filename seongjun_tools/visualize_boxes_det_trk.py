@@ -19,9 +19,41 @@ from pyquaternion import Quaternion
 
 DETECTION_COLOR = (0.1, 0.45, 0.95)
 TRACKING_COLOR = (0.95, 0.2, 0.2)
+TRACK_ID_COLOR = (0.0, 0.0, 0.0)
 GT_COLOR = (0.0, 0.0, 0.0)
 LIDAR_COLOR = 0.65
 TOPDOWN_FOV_DEG = 5.0
+
+DIGIT_SEGMENT_COORDS = {
+    "A": ((0.0, 2.0), (1.0, 2.0)),
+    "B": ((1.0, 2.0), (1.0, 1.0)),
+    "C": ((1.0, 1.0), (1.0, 0.0)),
+    "D": ((0.0, 0.0), (1.0, 0.0)),
+    "E": ((0.0, 0.0), (0.0, 1.0)),
+    "F": ((0.0, 1.0), (0.0, 2.0)),
+    "G": ((0.0, 1.0), (1.0, 1.0)),
+}
+
+DIGIT_SEGMENTS = {
+    "0": ("A", "B", "C", "D", "E", "F"),
+    "1": ("B", "C"),
+    "2": ("A", "B", "G", "E", "D"),
+    "3": ("A", "B", "G", "C", "D"),
+    "4": ("F", "G", "B", "C"),
+    "5": ("A", "F", "G", "C", "D"),
+    "6": ("A", "F", "G", "E", "C", "D"),
+    "7": ("A", "B", "C"),
+    "8": ("A", "B", "C", "D", "E", "F", "G"),
+    "9": ("A", "B", "C", "D", "F", "G"),
+}
+
+DIGIT_WIDTH = 1.0
+DIGIT_SPACING = 0.35
+TRACK_LABEL_HEIGHT_RATIO = 0.55
+TRACK_LABEL_MIN_HEIGHT = 0.8
+TRACK_ID_LABEL_MAX_CHARS = 6
+TRACK_ID_LABEL_SCALE_RATIO = 0.65
+TRACK_ID_LABEL_OFFSET_RATIO = 2.0
 
 
 def color_from_tracking_id(tracking_id: Any) -> Tuple[float, float, float]:
@@ -48,6 +80,67 @@ def color_from_tracking_id(tracking_id: Any) -> Tuple[float, float, float]:
     else:
         r, g, b = value, p, q
     return (float(r), float(g), float(b))
+
+
+def compute_track_label_scale(box: o3d.geometry.OrientedBoundingBox) -> float:
+    """
+    숫자 라벨의 실제 높이를 박스 크기에 비례하게 조절하기 위한 스케일을 계산한다.
+    """
+    extents = np.asarray(box.extent, dtype=np.float64)
+    planar_extent = float(np.min(extents[:2])) if extents.size >= 2 else float(extents[0])
+    planar_extent = max(planar_extent, 1e-3)
+    target_height = max(planar_extent * TRACK_LABEL_HEIGHT_RATIO, TRACK_LABEL_MIN_HEIGHT)
+    return target_height * 0.5  # create_track_index_label 은 2 * scale 높이를 생성한다.
+
+
+def create_track_index_label(
+    text: str,
+    center: np.ndarray,
+    planar_scale: float,
+    color: Tuple[float, float, float],
+) -> Optional[o3d.geometry.LineSet]:
+    digits = "".join(ch for ch in str(text) if ch in DIGIT_SEGMENTS)
+    if not digits or planar_scale <= 0.0:
+        return None
+
+    points: List[np.ndarray] = []
+    lines: List[List[int]] = []
+    point_offset = 0
+
+    for idx, digit in enumerate(digits):
+        segment_keys = DIGIT_SEGMENTS.get(digit, ())
+        if not segment_keys:
+            continue
+        x_offset = idx * (DIGIT_WIDTH + DIGIT_SPACING)
+        for segment_key in segment_keys:
+            start_xy, end_xy = DIGIT_SEGMENT_COORDS[segment_key]
+            start = np.array([start_xy[0] + x_offset, start_xy[1], 0.0], dtype=np.float64)
+            end = np.array([end_xy[0] + x_offset, end_xy[1], 0.0], dtype=np.float64)
+            points.append(start)
+            points.append(end)
+            lines.append([point_offset, point_offset + 1])
+            point_offset += 2
+
+    if not points or not lines:
+        return None
+
+    points_np = np.vstack(points)
+    points_np *= float(planar_scale)
+
+    min_xy = points_np[:, :2].min(axis=0)
+    max_xy = points_np[:, :2].max(axis=0)
+    text_center_xy = (min_xy + max_xy) * 0.5
+
+    points_np[:, 0] = points_np[:, 0] - text_center_xy[0] + float(center[0])
+    points_np[:, 1] = points_np[:, 1] - text_center_xy[1] + float(center[1])
+    points_np[:, 2] = float(center[2])
+
+    label = o3d.geometry.LineSet()
+    label.points = o3d.utility.Vector3dVector(points_np)
+    label.lines = o3d.utility.Vector2iVector(lines)
+    colors = np.tile(np.array(color, dtype=np.float64), (len(lines), 1))
+    label.colors = o3d.utility.Vector3dVector(colors)
+    return label
 
 
 def find_scene_by_name(nusc: NuScenes, scene_name: str) -> Dict[str, Any]:
@@ -216,8 +309,6 @@ def create_front_sphere(
 def determine_anchor_pose(
     nusc: NuScenes,
     sample_token: str,
-    detections: List[Dict[str, Any]],
-    trackings: List[Dict[str, Any]],
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     sample = nusc.get("sample", sample_token)
     lidar_token = sample["data"].get("LIDAR_TOP")
@@ -412,6 +503,7 @@ def build_sample_geometries(
     quat_order: str,
     add_axes: bool,
     axes_size: float,
+    track_order_registry: Optional[Dict[str, int]] = None,
 ) -> List[o3d.geometry.Geometry]:
     geometries: List[o3d.geometry.Geometry] = []
     for record in detections:
@@ -427,6 +519,11 @@ def build_sample_geometries(
         tracking_id = record.get("tracking_id")
         if tracking_id is None:
             raise ValueError(f"Tracking ID not found for record: {record}")
+        tracking_key = str(tracking_id)
+        track_order_index: Optional[int] = None
+        if track_order_registry is not None:
+            track_order_index = track_order_registry.get(tracking_key, 0) + 1
+            track_order_registry[tracking_key] = track_order_index
         record["translation"][2] += 2.0
         box = create_box_geometry(record, TRACKING_COLOR, anchor_center, anchor_rotation, size_order, quat_order)
         if box is not None:
@@ -434,6 +531,40 @@ def build_sample_geometries(
             # 앞 방향에 구체 추가
             sphere = create_front_sphere(box, TRACKING_COLOR)
             geometries.append(sphere)
+            box_center = np.asarray(box.center, dtype=np.float64)
+            label_scale = compute_track_label_scale(box)
+            if track_order_index is not None:
+                order_label = create_track_index_label(
+                    text=str(track_order_index),
+                    center=box_center,
+                    planar_scale=label_scale,
+                    color=TRACKING_COLOR,
+                )
+                if order_label is not None:
+                    geometries.append(order_label)
+
+            track_id_text = str(tracking_id)
+            if TRACK_ID_LABEL_MAX_CHARS > 0:
+                track_id_text = track_id_text[:TRACK_ID_LABEL_MAX_CHARS]
+            track_id_center = np.array(box_center, copy=True)
+            track_id_center[1] -= label_scale * TRACK_ID_LABEL_OFFSET_RATIO
+            track_id_scale = label_scale * TRACK_ID_LABEL_SCALE_RATIO
+            track_id_label = create_track_index_label(
+                text=track_id_text,
+                center=track_id_center,
+                planar_scale=track_id_scale,
+                color=TRACK_ID_COLOR,
+            )
+            if track_id_label is None:
+                fallback_text = str(abs(hash(tracking_id)) % 10000)
+                track_id_label = create_track_index_label(
+                    text=fallback_text,
+                    center=track_id_center,
+                    planar_scale=track_id_scale,
+                    color=TRACK_ID_COLOR,
+                )
+            if track_id_label is not None:
+                geometries.append(track_id_label)
         else:
             raise ValueError(f"Box not found for record: {record}")
     for record in ground_truths:
@@ -600,11 +731,12 @@ def main() -> None:
 
     print("Rendering Start")
     total_frames = end_index - start_index + 1
+    track_order_registry: Dict[str, int] = {}
     for offset, sample_index in enumerate(range(start_index, end_index + 1)):
         token = sample_tokens[sample_index]
         dets = detection_results.get(token, [])
         trks = tracking_results.get(token, [])
-        anchor_center, anchor_rotation = determine_anchor_pose(nusc, token, dets, trks)
+        anchor_center, anchor_rotation = determine_anchor_pose(nusc, token)
         gt_boxes = collect_ground_truth_boxes(nusc, token)
 
         geometries = build_sample_geometries(
@@ -617,6 +749,7 @@ def main() -> None:
             quat_order=args.quat_order,
             add_axes=args.show_axes,
             axes_size=args.axes_size,
+            track_order_registry=track_order_registry,
         )
 
         if args.show_lidar:
