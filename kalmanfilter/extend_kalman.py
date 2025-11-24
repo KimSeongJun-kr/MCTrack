@@ -46,7 +46,7 @@ class KF_YAW(KF_Base):
         # So observation Jacobian is identity matrix
         return self.JH
 
-    def step(self, z, dt=None):
+    def update(self, z, dt=None):
         """
         Runs one step of the EKF on observations z, where z is a tuple of length M.
         Returns a NumPy array representing the updated state.

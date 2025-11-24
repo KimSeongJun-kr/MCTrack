@@ -13,26 +13,19 @@ def norm_radian(radians):
     """
     Info: This function normalizes input radian values to the range [-pi, pi].
     Parameters:
-        input:
-            radians: Array-like or scalar radian values.
-        output:
-            radian_norm: Normalized radian values in the range [-pi, pi], either as a scalar or array.
+        radians: Array-like or scalar radian values.
+    Returns:
+        radian_norm: Normalized radian values in the range [-pi, pi].
+                     Returns a scalar if input is scalar, or numpy array if input is array-like.
     """
-    radians = np.array(radians).reshape(-1)
-    radians_norm = []
-    for radian in radians:
-        n = np.floor(radian / (2 * np.pi))
-        radian = radian - n * 2 * np.pi
-        radians_norm.append(radian)
-    radians_norm = np.array(radians_norm)
-    if len(radians_norm) == 1:
-        radian_norm = radians_norm[0]
-    else:
-        radian_norm = radians_norm
-    if radian_norm > np.pi:
-        return radian_norm - np.pi
-    else:
-        return radian_norm
+    # 입력값을 numpy 배열로 변환 (스칼라 입력도 처리 가능)
+    radians = np.asarray(radians)
+    
+    # 벡터화된 연산을 사용하여 한 번에 정규화 수행
+    # 공식: (x + pi) mod (2*pi) - pi
+    radian_norm = (radians + np.pi) % (2 * np.pi) - np.pi
+    
+    return radian_norm
 
 
 def norm_realative_radian(radians_diff):
