@@ -41,14 +41,14 @@ python /3dmot_ws/MCTrack/preprocess/convert2baseversion.py \
 ```bash
 python /3dmot_ws/MCTrack/main.py \
   -p {사용할 cpu 코어 개수} \
-  --dets_folder_path {전처리 데이터 저장 폴더 경로} \
+  --dets_folder_path {전처리 데이터 폴더 경로} \
   --save_folder_path {트래킹 결과 데이터 저장 폴더 경로} \
   --split {val/test/train/mini/mini_train/mini_val}
 ```
 
 #### 방법 2. 자동 실행
 ```bash
-bash /3dmot_ws/MCTrack/perform_tracking.sh \
+bash /3dmot_ws/MCTrack/run_tracking.sh \
   --run_name {작업 명칭} \
   --timestamp {time(YYYYMMDD_hhmmss)} \
   --step {N} \
@@ -58,7 +58,7 @@ bash /3dmot_ws/MCTrack/perform_tracking.sh \
 ```
 example
 ```bash
-bash /3dmot_ws/MCTrack/perform_tracking.sh \
+bash /3dmot_ws/MCTrack/run_tracking.sh \
   --run_name test_1 \
   --timestamp 20251104_174100 \
   --step 0 \
