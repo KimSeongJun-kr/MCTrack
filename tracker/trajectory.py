@@ -307,10 +307,16 @@ class Trajectory:
         unmatch_bbox_sum = 0
         start_xyz_lwh_yaw = None 
         start_frame = 0
+        first_frame_check_flag = False
 
         last_xyz_lwh_yaw_fusion = None
         for bbox in self.bboxes:
             frame_id = bbox.frame_id
+            if first_frame_check_flag == False and frame_id != self.first_updated_frame:
+                raise ValueError("BBox cache size problem. frame_id: %d, first_updated_frame: %d, bboxes len: %d" % (frame_id, self.first_updated_frame, len(self.bboxes)))
+            else:
+                first_frame_check_flag = True
+            
             bbox.det_score = self.logit(bbox.det_score)
             if bbox.det_score > -10000:
                 detected_num += 1
