@@ -111,7 +111,7 @@ if __name__ == "__main__":
     if args.dataset == "kitti":
         cfg_path = "./config/kitti.yaml"
     elif args.dataset == "nuscenes":
-        cfg_path = "./config/nuscenes.yaml"
+        cfg_path = "./config/nuscenes_custom.yaml"
     elif args.dataset == "waymo":
         cfg_path = "./config/waymo.yaml"
     if args.mode:
