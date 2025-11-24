@@ -427,6 +427,7 @@ def build_sample_geometries(
         tracking_id = record.get("tracking_id")
         if tracking_id is None:
             raise ValueError(f"Tracking ID not found for record: {record}")
+        record["translation"][2] += 2.0
         box = create_box_geometry(record, TRACKING_COLOR, anchor_center, anchor_rotation, size_order, quat_order)
         if box is not None:
             geometries.append(box)
@@ -436,6 +437,7 @@ def build_sample_geometries(
         else:
             raise ValueError(f"Box not found for record: {record}")
     for record in ground_truths:
+        record["translation"][2] += 1.0
         box = create_box_geometry(record, GT_COLOR, anchor_center, anchor_rotation, "wlh", "wxyz")
         if box is not None:
             geometries.append(box)
