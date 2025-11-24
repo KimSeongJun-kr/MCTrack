@@ -72,6 +72,12 @@ class Trajectory:
         self._is_filter_predict_box = cfg["THRESHOLD"]["TRAJECTORY_THRE"][
             "IS_FILTER_PREDICT_BOX"
         ][self.category_num]
+        self._flip_filter_track_length = cfg["THRESHOLD"]["TRAJECTORY_THRE"][
+            "FLIP_FILTER_TRACK_LENGTH"
+        ][self.category_num]
+        self._flip_filter_degree = cfg["THRESHOLD"]["TRAJECTORY_THRE"][
+            "FLIP_FILTER_DEGREE"
+        ][self.category_num]
         
         self.status_flag = 1  # 0:initialization / 1: confirmed / 2: obscured / 4: dead
         # we have tried to set the status_flag to 0, but it seems that it is not necessary
@@ -155,6 +161,13 @@ class Trajectory:
             vel_yaw = np.arctan2(global_velocity[1], global_velocity[0]+1e-5)
             vel_yaw_norm = norm_radian(vel_yaw)
             pose_yaw_norm = norm_radian(global_yaw)
+            
+            if bbox.track_length > self._flip_filter_track_length:
+                last_yaw = self.bboxes[-2].global_xyz_lwh_yaw_fusion[6]
+                yaw_diff =  norm_realative_radian(pose_yaw_norm - last_yaw)
+                if abs(yaw_diff) > self._flip_filter_degree / 180. * np.pi:
+                    pose_yaw_norm = norm_radian(pose_yaw_norm + np.pi)
+            
             measure = np.array([pose_yaw_norm, vel_yaw_norm])
         elif filter_flag == "size":
             measure = np.array([lwh[0], lwh[1]])
