@@ -162,11 +162,10 @@ class Trajectory:
             vel_yaw_norm = norm_radian(vel_yaw)
             pose_yaw_norm = norm_radian(global_yaw)
             
-            if bbox.track_length > self._flip_filter_track_length:
-                last_yaw = self.bboxes[-2].global_xyz_lwh_yaw_fusion[6]
-                yaw_diff =  norm_realative_radian(pose_yaw_norm - last_yaw)
-                if abs(yaw_diff) > self._flip_filter_degree / 180. * np.pi:
-                    pose_yaw_norm = norm_radian(pose_yaw_norm + np.pi)
+            last_yaw = self.bboxes[-2].global_xyz_lwh_yaw_fusion[6]
+            yaw_diff =  norm_radian(pose_yaw_norm - last_yaw)
+            if abs(yaw_diff) > np.pi / 2:
+                pose_yaw_norm = norm_radian(pose_yaw_norm + np.pi)
             
             measure = np.array([pose_yaw_norm, vel_yaw_norm])
         elif filter_flag == "size":

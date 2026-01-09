@@ -39,11 +39,9 @@ class KF_YAW(KF_Base):
         return F
 
     def h(self, x):
-        # Observation function is identity
         return self.JH * x
 
     def getH(self, x):
-        # So observation Jacobian is identity matrix
         return self.JH
 
     def update(self, z, dt=None):
