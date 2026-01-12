@@ -266,6 +266,98 @@ def create_box_geometry(
     return obb
 
 
+VELOCITY_ARROW_COLOR = (1.0, 0.0, 0.0)  # 빨간색
+
+
+def create_velocity_arrow(
+    box: o3d.geometry.OrientedBoundingBox,
+    velocity: Sequence[float],
+    color: Tuple[float, float, float] = VELOCITY_ARROW_COLOR,
+    arrow_length_scale: float = 1.0,
+    arrow_head_ratio: float = 0.25,
+    arrow_width_ratio: float = 0.08,
+    velocity_length_limit: float = 0.1,
+) -> Optional[o3d.geometry.LineSet]:
+    """
+    속도 벡터 방향(vel_yaw)으로 화살표를 생성합니다.
+    
+    Args:
+        box: OrientedBoundingBox 객체
+        velocity: 속도 벡터 [vx, vy] 또는 [vx, vy, vz]
+        color: 화살표 색상 (RGB, 0-1 범위)
+        arrow_length_scale: 화살표 길이 스케일
+        arrow_head_ratio: 화살표 머리 길이 비율
+        arrow_width_ratio: 화살표 머리 너비 비율
+    
+    Returns:
+        화살표 LineSet 객체 또는 None (속도가 너무 작은 경우)
+    """
+    if velocity is None or len(velocity) < 2:
+        return None
+    
+    vx, vy = float(velocity[0]), float(velocity[1])
+    
+    # 속도 크기 계산
+    speed = np.sqrt(vx * vx + vy * vy)
+    if speed < velocity_length_limit:  # 속도가 너무 작으면 화살표 생성 안함
+        return None
+    
+    # vel_yaw 계산 (trajectory.py 참고)
+    vel_yaw = np.arctan2(vy, vx + 1e-5)
+    
+    # 박스 중심 위치
+    center = np.asarray(box.center, dtype=np.float64)
+    extents = np.asarray(box.extent, dtype=np.float64)
+    
+    # 화살표 길이: 속도에 비례 (최소/최대 제한)
+    min_extent = float(np.min(extents[:2]))
+    arrow_length = min(max(speed * arrow_length_scale, min_extent * 0.5), min_extent * 3.0)
+    
+    # 화살표 방향 벡터
+    direction = np.array([np.cos(vel_yaw), np.sin(vel_yaw), 0.0], dtype=np.float64)
+    
+    # 화살표 시작점 (박스 중심)
+    start_point = center.copy()
+    start_point[2] = center[2] + extents[2] * 0.5 + 0.3  # 박스 위에 약간 띄움
+    
+    # 화살표 끝점
+    end_point = start_point + direction * arrow_length
+    
+    # 화살표 머리 포인트 계산
+    head_length = arrow_length * arrow_head_ratio
+    head_width = arrow_length * arrow_width_ratio
+    
+    # 화살표 머리의 좌우 방향 (vel_yaw에 수직)
+    perpendicular = np.array([-np.sin(vel_yaw), np.cos(vel_yaw), 0.0], dtype=np.float64)
+    
+    # 화살표 머리의 두 점
+    head_base = end_point - direction * head_length
+    head_left = head_base + perpendicular * head_width
+    head_right = head_base - perpendicular * head_width
+    
+    # LineSet 생성
+    points = np.array([
+        start_point,    # 0: 시작점
+        end_point,      # 1: 끝점
+        head_left,      # 2: 화살표 머리 왼쪽
+        head_right,     # 3: 화살표 머리 오른쪽
+    ], dtype=np.float64)
+    
+    lines = [
+        [0, 1],  # 화살표 몸통
+        [1, 2],  # 화살표 머리 왼쪽
+        [1, 3],  # 화살표 머리 오른쪽
+    ]
+    
+    arrow = o3d.geometry.LineSet()
+    arrow.points = o3d.utility.Vector3dVector(points)
+    arrow.lines = o3d.utility.Vector2iVector(lines)
+    colors = np.tile(np.array(color, dtype=np.float64), (len(lines), 1))
+    arrow.colors = o3d.utility.Vector3dVector(colors)
+    
+    return arrow
+
+
 def create_front_sphere(
     box: o3d.geometry.OrientedBoundingBox,
     color: Tuple[float, float, float],
@@ -531,6 +623,20 @@ def build_sample_geometries(
             # 앞 방향에 구체 추가
             sphere = create_front_sphere(box, TRACKING_COLOR)
             geometries.append(sphere)
+            
+            # 속도 방향 화살표 추가 (vel_yaw 기반)
+            velocity = record.get("velocity_det")
+            if velocity is not None and len(velocity) >= 2:
+                # velocity를 anchor 좌표계로 변환
+                vel_global = np.array([velocity[0], velocity[1], 0.0], dtype=np.float64)
+                if anchor_rotation is not None:
+                    vel_local = anchor_rotation.T @ vel_global
+                else:
+                    vel_local = vel_global
+                arrow = create_velocity_arrow(box, vel_local, VELOCITY_ARROW_COLOR, velocity_length_limit=0.0)
+                if arrow is not None:
+                    geometries.append(arrow)
+            
             box_center = np.asarray(box.center, dtype=np.float64)
             label_scale = compute_track_label_scale(box)
             if track_order_index is not None:
